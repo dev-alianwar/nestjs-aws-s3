@@ -2,24 +2,48 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Res,
   BadRequestException,
+  UseInterceptors,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
+  UploadedFile,
+  Param,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { FileService } from './file.service';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('File')
 @Controller('/api/file')
 export class FileController {
+  authService: any;
   constructor(private readonly fileService: FileService) {}
 
-  @Get('/retrieve')
-  async getProfileImage(@Res() res: Response) {
+  @Post('/upload')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  signUp(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 500000000 }),
+          new FileTypeValidator({ fileType: '(png|jpeg|jpg)' }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.fileService.upload(file);
+  }
+
+  @Get('/retrieve/:key')
+  async getProfileImage(@Param('key') key: string, @Res() res: Response) {
     try {
       const { stream, contentType, contentLength } =
-        await this.fileService.getProfileImage(key);
+        await this.fileService.retrieve(key);
 
       res.set({
         'Content-Type': contentType,
@@ -30,18 +54,5 @@ export class FileController {
     } catch (error) {
       throw new BadRequestException('Error streaming file from S3');
     }
-  }
-
-  @Post()
-  async create(@Body() createProfileDto: CreateProfileDto) {
-    const { user } = await this.userContext.getUser();
-
-    if (!user) {
-      return;
-    }
-    return this.profileService.create({
-      ...createProfileDto,
-      userId: user.id,
-    });
   }
 }
